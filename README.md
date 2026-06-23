@@ -1,5 +1,10 @@
 # Google Workspace MCP
 
+English version: [README.en.md](README.en.md)
+
+文档同步约定：
+以后修改本 README 中文内容时，请同时同步更新 `README.en.md`，保持两份文档结构和关键信息一致。
+
 一个最小可运行的 MCP 项目骨架，先打通这条闭环：
 
 1. 从 Obsidian note 中识别 Google Doc SSOT 链接
