@@ -14,6 +14,10 @@
 - `obsidian_note_write`
 - `obsidian_sync_google_doc_ssot`
 
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
+
 ## 当前认证方式
 
 默认支持本地 credential 文件：

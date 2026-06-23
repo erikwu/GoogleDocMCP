@@ -2,6 +2,7 @@
   "name": "google-workspace-mcp",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Minimal MCP scaffold for reading Google Docs and syncing SSOT content into Obsidian notes.",
   "scripts": {
