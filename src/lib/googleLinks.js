@@ -1,0 +1,183 @@
+import { AppError } from "../errors.js";
+
+const GOOGLE_DOC_URL_PATTERN =
+  /https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
+const GOOGLE_SHEET_URL_PATTERN =
+  /https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
+
+function normalizeSheetGid(gid) {
+  if (gid === undefined || gid === null || gid === "") {
+    return null;
+  }
+
+  return String(gid);
+}
+
+function parseGoogleSheetUrlState(url) {
+  try {
+    const parsed = new URL(url);
+    const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
+    return {
+      gid:
+        normalizeSheetGid(parsed.searchParams.get("gid")) ??
+        normalizeSheetGid(hashParams.get("gid")),
+      range:
+        parsed.searchParams.get("range") ?? hashParams.get("range") ?? null
+    };
+  } catch {
+    return {
+      gid: null,
+      range: null
+    };
+  }
+}
+
+export function parseGoogleDocUrl(url) {
+  if (typeof url !== "string") {
+    throw new AppError("INVALID_LINK", "Google Doc URL must be a string.");
+  }
+
+  const match = url.match(GOOGLE_DOC_URL_PATTERN);
+  if (!match) {
+    throw new AppError("INVALID_LINK", "Unsupported Google Doc URL.", {
+      details: { url }
+    });
+  }
+
+  const documentId = match[1];
+  return {
+    documentId,
+    canonicalUrl: `https://docs.google.com/document/d/${documentId}/edit`
+  };
+}
+
+export function parseGoogleSheetUrl(url) {
+  if (typeof url !== "string") {
+    throw new AppError("INVALID_LINK", "Google Sheet URL must be a string.");
+  }
+
+  const match = url.match(GOOGLE_SHEET_URL_PATTERN);
+  if (!match) {
+    throw new AppError("INVALID_LINK", "Unsupported Google Sheet URL.", {
+      details: { url }
+    });
+  }
+
+  const spreadsheetId = match[1];
+  const { gid, range } = parseGoogleSheetUrlState(url);
+  const canonicalUrl = gid
+    ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${gid}`
+    : `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+
+  return {
+    spreadsheetId,
+    canonicalUrl,
+    gid,
+    range
+  };
+}
+
+export function extractGoogleDocUrls(text) {
+  if (typeof text !== "string" || text.length === 0) {
+    return [];
+  }
+
+  const matcher = new RegExp(GOOGLE_DOC_URL_PATTERN.source, "gi");
+  const urls = [];
+  let match;
+
+  while ((match = matcher.exec(text))) {
+    urls.push(parseGoogleDocUrl(match[0]).canonicalUrl);
+  }
+
+  return Array.from(new Set(urls));
+}
+
+export function resolveGoogleDocSource(source) {
+  if (!source || typeof source !== "object") {
+    throw new AppError("INVALID_SOURCE", "A Google Doc source is required.");
+  }
+
+  if (source.url) {
+    const { documentId, canonicalUrl } = parseGoogleDocUrl(source.url);
+    if (source.id && source.id !== documentId) {
+      throw new AppError(
+        "INVALID_SOURCE",
+        "Provided Google Doc URL and id do not match."
+      );
+    }
+
+    return {
+      documentId,
+      sourceUrl: canonicalUrl
+    };
+  }
+
+  if (source.id) {
+    return {
+      documentId: source.id,
+      sourceUrl: `https://docs.google.com/document/d/${source.id}/edit`
+    };
+  }
+
+  throw new AppError(
+    "INVALID_SOURCE",
+    "Provide either a Google Doc URL or document id."
+  );
+}
+
+export function resolveGoogleSheetSource(source) {
+  if (!source || typeof source !== "object") {
+    throw new AppError("INVALID_SOURCE", "A Google Sheet source is required.");
+  }
+
+  if (source.url) {
+    const parsed = parseGoogleSheetUrl(source.url);
+    if (source.id && source.id !== parsed.spreadsheetId) {
+      throw new AppError(
+        "INVALID_SOURCE",
+        "Provided Google Sheet URL and id do not match."
+      );
+    }
+
+    const gid = normalizeSheetGid(source.gid) ?? parsed.gid;
+    if (
+      normalizeSheetGid(source.gid) &&
+      parsed.gid &&
+      normalizeSheetGid(source.gid) !== parsed.gid
+    ) {
+      throw new AppError(
+        "INVALID_SOURCE",
+        "Provided Google Sheet URL and gid do not match."
+      );
+    }
+
+    return {
+      spreadsheetId: parsed.spreadsheetId,
+      sourceUrl: gid
+        ? `https://docs.google.com/spreadsheets/d/${parsed.spreadsheetId}/edit#gid=${gid}`
+        : parsed.canonicalUrl,
+      gid,
+      sheetName: source.sheet ?? null,
+      range: source.range ?? parsed.range ?? null
+    };
+  }
+
+  if (source.id) {
+    const gid = normalizeSheetGid(source.gid);
+    return {
+      spreadsheetId: source.id,
+      sourceUrl: gid
+        ? `https://docs.google.com/spreadsheets/d/${source.id}/edit#gid=${gid}`
+        : `https://docs.google.com/spreadsheets/d/${source.id}/edit`,
+      gid,
+      sheetName: source.sheet ?? null,
+      range: source.range ?? null
+    };
+  }
+
+  throw new AppError(
+    "INVALID_SOURCE",
+    "Provide either a Google Sheet URL or spreadsheet id."
+  );
+}

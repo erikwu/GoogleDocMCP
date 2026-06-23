@@ -1,0 +1,23 @@
+{
+  "google": {
+    "auth": {
+      "mode": "service_account",
+      "credentialPath": "../secrets/google-service-account.json",
+      "scopes": [
+        "https://www.googleapis.com/auth/documents.readonly",
+        "https://www.googleapis.com/auth/spreadsheets.readonly"
+      ]
+    }
+  },
+  "obsidian": {
+    "vaultRoot": "/absolute/path/to/your/ObsidianVault"
+  },
+  "sync": {
+    "blockHeading": "## Google Doc SSOT Sync",
+    "startMarker": "<!-- google-doc-ssot:start -->",
+    "endMarker": "<!-- google-doc-ssot:end -->"
+  },
+  "limits": {
+    "maxDocChars": 120000
+  }
+}
