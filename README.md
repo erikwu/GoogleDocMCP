@@ -15,8 +15,13 @@ English version: [README.en.md](README.en.md)
 ## 当前已实现
 
 - `google_doc_read`
+- `google_doc_write`
 - `google_sheet_read`
+- `google_slide_read`
+- `google_slide_write`
+- `google_slide_apply_sheet_mappings`
 - `obsidian_note_write`
+- `obsidian_sync_google_doc`
 - `obsidian_sync_google_doc_ssot`
 
 ## License
@@ -30,7 +35,7 @@ Apache License 2.0. See [LICENSE](LICENSE).
 - `service_account`
 - `access_token`
 
-如果使用 `service_account`，需要把目标 Google Doc / Google Sheet 分享给该服务账号邮箱。
+如果使用 `service_account`，需要把目标 Google Doc / Google Sheet / Google Slide 分享给该服务账号邮箱。
 
 ## 如何获得 `google-service-account.json`
 
@@ -42,11 +47,11 @@ Apache License 2.0. See [LICENSE](LICENSE).
 2. 新建一个项目，或者选中你已有的项目。
 3. 后续所有 API、Service Account 和 key 都会绑定在这个项目下。
 
-### 2. 启用 Google Docs API / Google Sheets API
+### 2. 启用 Google Docs API / Google Sheets API / Google Slides API
 
 1. 在当前项目里启用 Google Docs API。
 2. 如果你要使用当前已经支持的 Google Sheet 读取，也要启用 Google Sheets API。
-3. 如果你后面要继续接 Google Slide，也建议顺手启用 Google Slides API。
+3. 如果你要使用当前已经支持的 Google Slide 读取和写入，也要启用 Google Slides API。
 4. 如果你在创建 key 时遇到 IAM 相关页面不可用，也可以顺手确认 IAM API 是否已启用。
 
 ### 3. 创建 Service Account
@@ -64,7 +69,7 @@ Apache License 2.0. See [LICENSE](LICENSE).
 your-service-account-name@your-project-id.iam.gserviceaccount.com
 ```
 
-后面你需要把目标 Google Doc 分享给这个邮箱。
+后面你需要把目标 Google Doc / Google Sheet / Google Slide 分享给这个邮箱。
 
 ### 3.1 在创建 Service Account 时，Permissions 该怎么选
 
@@ -175,7 +180,7 @@ secrets/google-service-account.json
 1. 打开你的 Google Doc。
 2. 点击右上角 `Share`。
 3. 把 service account 的邮箱加进去。
-4. 至少给 `Viewer` 权限；如果后面要做写回，再给更高权限。
+4. 如果只是读取，至少给 `Viewer` 权限；如果要支持 `Obsidian -> Google Doc` 覆盖写回，需要给 `Editor` 权限。
 
 如果不做这一步，最常见结果就是调用 API 时返回 `403 PERMISSION_DENIED`。
 
@@ -293,12 +298,13 @@ GOOGLE_WORKSPACE_MCP_CONFIG = "/absolute/path/to/GoogleDoc MCP/config/local.json
 
 如果你使用 `service_account`，也要确认 `credentialPath` 对应的 JSON key 文件已经放好。
 
-如果你要读取 Google Sheet，`scopes` 至少要包含：
+如果你要读取 Google Sheet，并支持 Google Doc / Google Slide 写入，`scopes` 至少要包含：
 
 ```json
 [
-  "https://www.googleapis.com/auth/documents.readonly",
-  "https://www.googleapis.com/auth/spreadsheets.readonly"
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/spreadsheets.readonly",
+  "https://www.googleapis.com/auth/presentations"
 ]
 ```
 
@@ -313,8 +319,13 @@ GOOGLE_WORKSPACE_MCP_CONFIG = "/absolute/path/to/GoogleDoc MCP/config/local.json
 重启后，你就可以在 Codex 里尝试调用这个 MCP 提供的工具，例如：
 
 - `google_doc_read`
+- `google_doc_write`
 - `google_sheet_read`
+- `google_slide_read`
+- `google_slide_write`
+- `google_slide_apply_sheet_mappings`
 - `obsidian_note_write`
+- `obsidian_sync_google_doc`
 - `obsidian_sync_google_doc_ssot`
 
 如果工具能被识别，说明 `google_workspace` MCP 已经接入成功。
@@ -392,13 +403,291 @@ GOOGLE_WORKSPACE_MCP_CONFIG = "/absolute/path/to/GoogleDoc MCP/config/local.json
 - `rows`
 - `availableSheets`
 
+## Google Doc 读取与写入
+
+`google_doc_read` 会返回：
+
+- `title`
+- `markdown`
+- `plainText`
+- `tabs`
+
+`google_doc_write` 会用传入的 markdown 或 text 覆盖 Google Doc 正文。
+
+当前写入侧会优先保留这些结构：
+
+- Markdown 标题
+- 普通段落
+- 无序列表
+- 有序列表
+- 引用块
+- 代码块
+- 粗体、斜体、删除线
+- 行内代码
+- Markdown 链接
+- Markdown 表格会退化成可读文本行
+
+当前不做复杂结构保真：
+
+- Google Doc tabs 写回
+- 更复杂的嵌套 markdown 组合样式
+- 真正的 Google Doc 表格重建
+
+示例：
+
+```json
+{
+  "source": {
+    "url": "https://docs.google.com/document/d/your-doc-id/edit"
+  },
+  "markdown": "# Weekly Update\n\n- Item A\n- Item B"
+}
+```
+
+## Google Slide 读取与写入
+
+`google_slide_read` 会返回：
+
+- presentation 标题
+- `revisionId`
+- 每一页的 `slideNumber`
+- 每一页的 `objectId`
+- slide 内文本归一化后的 `markdown`
+- slide 内 page element 的结构化信息
+
+`google_slide_write` 当前支持三种最小写法：
+
+- `replace_all_text`
+  适合按占位符批量替换文本，可选限定到某一页
+- `replace_shape_text`
+  适合按 shape 的 `object_id` 精准替换某一个文本框的全部内容
+- `replace_table_cell_text`
+  适合按 table 的 `object_id` 精准替换某个单元格的全部内容，`row_index` / `column_index` 使用 0-based 索引
+
+示例：
+
+```json
+{
+  "source": {
+    "url": "https://docs.google.com/presentation/d/your-slide-id/edit"
+  }
+}
+```
+
+```json
+{
+  "source": {
+    "id": "your-slide-id"
+  },
+  "operations": [
+    {
+      "mode": "replace_all_text",
+      "match_text": "{{owner}}",
+      "replace_text": "Erik",
+      "slide_number": 2
+    },
+    {
+      "mode": "replace_shape_text",
+      "object_id": "g2b7c9d1e0f_0_12",
+      "text": "Updated content from MCP"
+    },
+    {
+      "mode": "replace_table_cell_text",
+      "object_id": "g3f23f6f4d08_0_3",
+      "row_index": 1,
+      "column_index": 3,
+      "text": "4/22"
+    }
+  ]
+}
+```
+
+## Google Sheet 驱动 Google Slide 更新
+
+`google_slide_apply_sheet_mappings` 会先读取 Google Sheet，再把表格里的映射规则应用到 Google Slide。
+
+默认推荐的最小表头：
+
+```text
+mode | placeholder | value | slide | object_id | text | enabled
+```
+
+使用规则：
+
+- `mode = replace_all_text`
+  需要 `placeholder` 和 `value`
+- `mode = replace_shape_text`
+  需要 `object_id` 和 `text`
+- `slide`
+  可填 slide number，例如 `2`；也可直接填 slide 的 `objectId`
+- `enabled`
+  可填 `true/false`
+
+示例：
+
+```json
+{
+  "presentation": {
+    "url": "https://docs.google.com/presentation/d/your-slide-id/edit"
+  },
+  "sheet": {
+    "url": "https://docs.google.com/spreadsheets/d/your-sheet-id/edit#gid=0",
+    "sheet": "Mappings",
+    "range": "A1:G20"
+  }
+}
+```
+
+这个工具适合做两类事情：
+
+- 用 Sheet 统一管理 Slide 占位符替换
+- 用 Sheet 精准指定某个文本框 `object_id` 的最终内容
+
 ## 启动
 
 ```bash
 node src/index.js
 ```
 
-## 建议的 Obsidian note 写法
+## 两套同步模板
+
+### 模板 1：Obsidian md 为主，Google Doc 为辅
+
+当你调用 `obsidian_sync_google_doc` 时，会读取 marker 内的 markdown 内容，并直接覆盖 Google Doc 正文。
+
+示例见：
+
+- [examples/obsidian-primary-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/obsidian-primary-sync.example.md)
+
+模板写法：
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: obsidian_to_google_doc
+google_doc_sync_heading: "## Obsidian Primary Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# 我的笔记
+
+这里是 Obsidian 自有内容，不参与同步。
+
+## Obsidian Primary Sync
+
+<!-- google-doc-sync:start -->
+# 这一段以 Obsidian 为准
+
+这里的内容会覆盖 Google Doc 正文。
+<!-- google-doc-sync:end -->
+```
+
+### 模板 2：Google Doc 为主，Obsidian md 为辅
+
+当你调用 `obsidian_sync_google_doc` 时，会读取 Google Doc 最新内容，只更新 marker 内的区块，保留 Obsidian 其他人工内容。
+
+示例见：
+
+- [examples/google-doc-primary-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/google-doc-primary-sync.example.md)
+
+模板写法：
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: google_doc_to_obsidian
+google_doc_sync_heading: "## Google Doc Primary Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# 我的笔记
+
+这里是 Obsidian 自有内容，不会被覆盖。
+
+## Google Doc Primary Sync
+
+<!-- google-doc-sync:start -->
+<!-- google-doc-sync:end -->
+```
+
+### 模板 3：只比较，不改任一边文档
+
+当你调用 `obsidian_sync_google_doc` 且方向为 `compare_only` 时，MCP 会读取 Google Doc 与 Obsidian marker 区块内容，输出差异总结，但不会修改 Google Doc，也不会修改 Obsidian note。
+
+示例见：
+
+- [examples/compare-only-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/compare-only-sync.example.md)
+
+模板写法：
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: compare_only
+google_doc_sync_heading: "## Compare Only Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# 我的笔记
+
+这里是 Obsidian 自有内容，不参与比较结果写回。
+
+## Compare Only Sync
+
+<!-- google-doc-sync:start -->
+# 当前 Obsidian 区块
+
+只做差异比较，不做同步覆盖。
+<!-- google-doc-sync:end -->
+```
+
+返回结果会包含：
+
+- `comparison.exactMatch`：两边是否完全一致
+- `comparison.comparisonStatus`：`match`、`different` 或 `managed-block-missing`
+- `comparison.hunks`：差异分段预览，便于后续人工判断要不要同步
+- `modifiedTargets: []`：明确表示这次没有改动任何目标
+
+### 调用方式
+
+推荐直接调用：
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md"
+}
+```
+
+工具会自动读取 note frontmatter 里的：
+
+- `google_doc_sync_url`
+- `google_doc_sync_direction`
+- `google_doc_sync_start_marker`
+- `google_doc_sync_end_marker`
+- `google_doc_sync_heading`
+
+如果你想临时覆盖方向，也可以显式传：
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md",
+  "direction": "obsidian_to_google_doc"
+}
+```
+
+比较模式也可以这样显式调用：
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md",
+  "direction": "compare_only"
+}
+```
+
+## 旧版 SSOT 模板
 
 ```md
 ---
@@ -417,8 +706,22 @@ google_doc_ssot_url: https://docs.google.com/document/d/your-doc-id/edit
 
 ## 同步行为
 
-`obsidian_sync_google_doc_ssot` 只会更新 `<!-- google-doc-ssot:start -->` 和 `<!-- google-doc-ssot:end -->` 之间的内容。
+`obsidian_sync_google_doc_ssot` 现在是兼容旧调用的别名：
+
+- 如果 note 没配置方向，默认按 `Google Doc -> Obsidian`
+- 如果 note 明确配置了 `google_doc_sync_direction: obsidian_to_google_doc`，也会按该方向执行，不再强制覆盖成 `Google Doc -> Obsidian`
 
 - note 其他内容保持不变
 - 如果没有同步区块，会自动在文末追加
 - 如果检测到这次更新只是 Doc 尾部新增内容，会在返回结果里标记为 `append-only`
+
+`obsidian_sync_google_doc` 是更通用的新入口：
+
+- 当 `google_doc_sync_direction = google_doc_to_obsidian` 时，行为类似旧版 `obsidian_sync_google_doc_ssot`
+- 当 `google_doc_sync_direction = obsidian_to_google_doc` 时，会把 marker 区块内容覆盖写回 Google Doc
+- 当 `google_doc_sync_direction = compare_only` 时，只返回 Google Doc 与 Obsidian marker 区块的差异总结，不修改任一边文档
+
+当前 MCP 不做后台文件监听。
+
+- “修改后直接同步”指的是调用 MCP 工具时立即按模板方向同步
+- 不会在你编辑 note 或 Google Doc 的瞬间自动后台触发

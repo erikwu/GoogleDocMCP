@@ -15,8 +15,13 @@ This repository is a minimal MCP project scaffold focused on establishing the fo
 ## Currently Implemented
 
 - `google_doc_read`
+- `google_doc_write`
 - `google_sheet_read`
+- `google_slide_read`
+- `google_slide_write`
+- `google_slide_apply_sheet_mappings`
 - `obsidian_note_write`
+- `obsidian_sync_google_doc`
 - `obsidian_sync_google_doc_ssot`
 
 ## License
@@ -30,7 +35,7 @@ By default, this project supports local credential files for:
 - `service_account`
 - `access_token`
 
-If you use `service_account`, you must share the target Google Doc / Google Sheet with the service account email.
+If you use `service_account`, you must share the target Google Doc / Google Sheet / Google Slide with the service account email.
 
 ## How To Get `google-service-account.json`
 
@@ -42,11 +47,11 @@ This project currently recommends `service_account` as the default authenticatio
 2. Create a new project, or select an existing one.
 3. All APIs, service accounts, and keys used below will belong to that project.
 
-### 2. Enable Google Docs API / Google Sheets API
+### 2. Enable Google Docs API / Google Sheets API / Google Slides API
 
 1. Enable Google Docs API in the selected project.
 2. If you want to use the already-supported Google Sheet reading capability, enable Google Sheets API as well.
-3. If you plan to add Google Slides support later, it is a good idea to enable Google Slides API at the same time.
+3. If you want to use the already-supported Google Slide reading and writing capability, enable Google Slides API as well.
 4. If IAM-related pages are unavailable while creating keys, also verify that the IAM API is enabled.
 
 ### 3. Create a Service Account
@@ -64,7 +69,7 @@ After creation, Google will assign an email to the service account. It typically
 your-service-account-name@your-project-id.iam.gserviceaccount.com
 ```
 
-Later, you will need to share the target Google Doc with that email address.
+Later, you will need to share the target Google Doc / Google Sheet / Google Slide with that email address.
 
 ### 3.1 What Permissions Should I Choose During Service Account Creation?
 
@@ -175,7 +180,7 @@ The process is the same as sharing a document with any other email address:
 1. Open your Google Doc.
 2. Click `Share` in the upper-right corner.
 3. Add the service account email.
-4. Grant at least `Viewer` access. If you later want write-back support, grant a higher permission level.
+4. Grant at least `Viewer` access for read-only use. If you want `Obsidian -> Google Doc` overwrite sync, grant `Editor` access.
 
 If you skip this step, the most common result is a `403 PERMISSION_DENIED` response from the API.
 
@@ -293,12 +298,13 @@ At minimum, make sure it configures:
 
 If you use `service_account`, also make sure the JSON key file referenced by `credentialPath` is already in place.
 
-If you want to read Google Sheets, `scopes` should at least include:
+If you want to read Google Sheets and write Google Docs / Google Slides, `scopes` should at least include:
 
 ```json
 [
-  "https://www.googleapis.com/auth/documents.readonly",
-  "https://www.googleapis.com/auth/spreadsheets.readonly"
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/spreadsheets.readonly",
+  "https://www.googleapis.com/auth/presentations"
 ]
 ```
 
@@ -313,8 +319,13 @@ This is the most reliable approach because newly added MCP servers usually need 
 After restart, try calling the tools exposed by this MCP from Codex, for example:
 
 - `google_doc_read`
+- `google_doc_write`
 - `google_sheet_read`
+- `google_slide_read`
+- `google_slide_write`
+- `google_slide_apply_sheet_mappings`
 - `obsidian_note_write`
+- `obsidian_sync_google_doc`
 - `obsidian_sync_google_doc_ssot`
 
 If those tools are recognized, the `google_workspace` MCP has been integrated successfully.
@@ -392,13 +403,291 @@ The returned payload includes:
 - `rows`
 - `availableSheets`
 
+## Google Doc Reading And Writing
+
+`google_doc_read` returns:
+
+- `title`
+- `markdown`
+- `plainText`
+- `tabs`
+
+`google_doc_write` overwrites the Google Doc body from markdown or plain text.
+
+The current writer preserves these structures first:
+
+- Markdown headings
+- normal paragraphs
+- unordered lists
+- ordered lists
+- blockquotes
+- code blocks
+- bold, italic, and strikethrough
+- inline code
+- Markdown links
+- Markdown tables downgraded into readable text rows
+
+The current writer does not yet preserve complex fidelity for:
+
+- Google Doc tabs
+- more complex nested markdown style combinations
+- real Google Doc table reconstruction
+
+Example:
+
+```json
+{
+  "source": {
+    "url": "https://docs.google.com/document/d/your-doc-id/edit"
+  },
+  "markdown": "# Weekly Update\n\n- Item A\n- Item B"
+}
+```
+
+## Google Slide Reading And Writing
+
+`google_slide_read` returns:
+
+- presentation title
+- `revisionId`
+- each slide's `slideNumber`
+- each slide's `objectId`
+- normalized slide `markdown`
+- structured page-element metadata for each slide
+
+`google_slide_write` currently supports three minimum operation types:
+
+- `replace_all_text`
+  best for placeholder-style text replacement, optionally scoped to a specific slide
+- `replace_shape_text`
+  best for replacing the full content of one specific text shape by `object_id`
+- `replace_table_cell_text`
+  best for replacing one specific table cell by the table `object_id`; `row_index` and `column_index` are 0-based
+
+Example:
+
+```json
+{
+  "source": {
+    "url": "https://docs.google.com/presentation/d/your-slide-id/edit"
+  }
+}
+```
+
+```json
+{
+  "source": {
+    "id": "your-slide-id"
+  },
+  "operations": [
+    {
+      "mode": "replace_all_text",
+      "match_text": "{{owner}}",
+      "replace_text": "Erik",
+      "slide_number": 2
+    },
+    {
+      "mode": "replace_shape_text",
+      "object_id": "g2b7c9d1e0f_0_12",
+      "text": "Updated content from MCP"
+    },
+    {
+      "mode": "replace_table_cell_text",
+      "object_id": "g3f23f6f4d08_0_3",
+      "row_index": 1,
+      "column_index": 3,
+      "text": "4/22"
+    }
+  ]
+}
+```
+
+## Google Sheet Driven Google Slide Updates
+
+`google_slide_apply_sheet_mappings` first reads a Google Sheet, then applies the mapping rows to a Google Slide presentation.
+
+Recommended minimum header row:
+
+```text
+mode | placeholder | value | slide | object_id | text | enabled
+```
+
+How it works:
+
+- `mode = replace_all_text`
+  requires `placeholder` and `value`
+- `mode = replace_shape_text`
+  requires `object_id` and `text`
+- `slide`
+  can be a slide number such as `2`, or a slide `objectId`
+- `enabled`
+  can be `true/false`
+
+Example:
+
+```json
+{
+  "presentation": {
+    "url": "https://docs.google.com/presentation/d/your-slide-id/edit"
+  },
+  "sheet": {
+    "url": "https://docs.google.com/spreadsheets/d/your-sheet-id/edit#gid=0",
+    "sheet": "Mappings",
+    "range": "A1:G20"
+  }
+}
+```
+
+This tool is useful for two common patterns:
+
+- manage placeholder replacement for Slides from a Sheet
+- use a Sheet to define the final content for specific text shapes by `object_id`
+
 ## Start
 
 ```bash
 node src/index.js
 ```
 
-## Recommended Obsidian Note Format
+## Two Sync Templates
+
+### Template 1: Obsidian Markdown Is Primary, Google Doc Is Secondary
+
+When you call `obsidian_sync_google_doc`, the MCP reads the markdown content inside the managed marker block and overwrites the Google Doc body with it.
+
+See:
+
+- [examples/obsidian-primary-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/obsidian-primary-sync.example.md)
+
+Template:
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: obsidian_to_google_doc
+google_doc_sync_heading: "## Obsidian Primary Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# My Notes
+
+This part belongs to Obsidian only and is not synced.
+
+## Obsidian Primary Sync
+
+<!-- google-doc-sync:start -->
+# This block is owned by Obsidian
+
+This content overwrites the Google Doc body.
+<!-- google-doc-sync:end -->
+```
+
+### Template 2: Google Doc Is Primary, Obsidian Markdown Is Secondary
+
+When you call `obsidian_sync_google_doc`, the MCP reads the latest Google Doc content and updates only the managed block inside the note, preserving all manual note content outside that block.
+
+See:
+
+- [examples/google-doc-primary-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/google-doc-primary-sync.example.md)
+
+Template:
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: google_doc_to_obsidian
+google_doc_sync_heading: "## Google Doc Primary Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# My Notes
+
+This part belongs to Obsidian and will not be overwritten.
+
+## Google Doc Primary Sync
+
+<!-- google-doc-sync:start -->
+<!-- google-doc-sync:end -->
+```
+
+### Template 3: Compare Only, Modify Neither Side
+
+When you call `obsidian_sync_google_doc` with `compare_only`, the MCP reads both the Google Doc and the managed Obsidian marker block, returns a difference summary, and does not modify either the Google Doc or the Obsidian note.
+
+See:
+
+- [examples/compare-only-sync.example.md](/Users/erik/Documents/GoogleDoc%20MCP/examples/compare-only-sync.example.md)
+
+Template:
+
+```md
+---
+google_doc_sync_url: https://docs.google.com/document/d/your-doc-id/edit
+google_doc_sync_direction: compare_only
+google_doc_sync_heading: "## Compare Only Sync"
+google_doc_sync_start_marker: "<!-- google-doc-sync:start -->"
+google_doc_sync_end_marker: "<!-- google-doc-sync:end -->"
+---
+
+# My Notes
+
+This part belongs to Obsidian only and is not written back anywhere.
+
+## Compare Only Sync
+
+<!-- google-doc-sync:start -->
+# Current Obsidian block
+
+This mode only compares differences and does not overwrite either side.
+<!-- google-doc-sync:end -->
+```
+
+The result includes:
+
+- `comparison.exactMatch`: whether both sides are exactly the same
+- `comparison.comparisonStatus`: `match`, `different`, or `managed-block-missing`
+- `comparison.hunks`: preview segments of the detected differences
+- `modifiedTargets: []`: an explicit signal that nothing was changed
+
+### How To Call It
+
+Recommended minimum input:
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md"
+}
+```
+
+The tool will read these template fields from the note frontmatter automatically:
+
+- `google_doc_sync_url`
+- `google_doc_sync_direction`
+- `google_doc_sync_start_marker`
+- `google_doc_sync_end_marker`
+- `google_doc_sync_heading`
+
+If you want to temporarily override the direction, you can also pass it explicitly:
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md",
+  "direction": "obsidian_to_google_doc"
+}
+```
+
+You can also call compare mode explicitly:
+
+```json
+{
+  "note_path": "/absolute/path/to/your-note.md",
+  "direction": "compare_only"
+}
+```
+
+## Legacy SSOT Template
 
 ```md
 ---
@@ -417,8 +706,22 @@ This content is maintained manually and will not be overwritten during sync.
 
 ## Sync Behavior
 
-`obsidian_sync_google_doc_ssot` only updates the content between `<!-- google-doc-ssot:start -->` and `<!-- google-doc-ssot:end -->`.
+`obsidian_sync_google_doc_ssot` is now a backward-compatible alias:
+
+- if the note does not configure a direction, it defaults to `Google Doc -> Obsidian`
+- if the note explicitly sets `google_doc_sync_direction: obsidian_to_google_doc`, it now respects that direction instead of forcing `Google Doc -> Obsidian`
 
 - all other note content stays unchanged
 - if the sync block does not exist, it will be appended to the end of the note automatically
 - if the update only appends new content from the tail of the source Doc, the result will be marked as `append-only`
+
+`obsidian_sync_google_doc` is the newer and more general entry point:
+
+- when `google_doc_sync_direction = google_doc_to_obsidian`, it behaves like the legacy `obsidian_sync_google_doc_ssot`
+- when `google_doc_sync_direction = obsidian_to_google_doc`, it overwrites the Google Doc with the managed note block
+- when `google_doc_sync_direction = compare_only`, it only returns a difference summary between the Google Doc and the managed Obsidian block without modifying either side
+
+The current MCP does not run a background watcher.
+
+- “sync immediately after edits” means the sync happens immediately when you call the MCP tool
+- it does not auto-trigger in the background the instant you type inside Obsidian or Google Docs

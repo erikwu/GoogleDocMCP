@@ -4,6 +4,8 @@ const GOOGLE_DOC_URL_PATTERN =
   /https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
 const GOOGLE_SHEET_URL_PATTERN =
   /https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
+const GOOGLE_SLIDE_URL_PATTERN =
+  /https:\/\/docs\.google\.com\/presentation\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
 
 function normalizeSheetGid(gid) {
   if (gid === undefined || gid === null || gid === "") {
@@ -74,6 +76,25 @@ export function parseGoogleSheetUrl(url) {
     canonicalUrl,
     gid,
     range
+  };
+}
+
+export function parseGoogleSlideUrl(url) {
+  if (typeof url !== "string") {
+    throw new AppError("INVALID_LINK", "Google Slide URL must be a string.");
+  }
+
+  const match = url.match(GOOGLE_SLIDE_URL_PATTERN);
+  if (!match) {
+    throw new AppError("INVALID_LINK", "Unsupported Google Slide URL.", {
+      details: { url }
+    });
+  }
+
+  const presentationId = match[1];
+  return {
+    presentationId,
+    canonicalUrl: `https://docs.google.com/presentation/d/${presentationId}/edit`
   };
 }
 
@@ -179,5 +200,38 @@ export function resolveGoogleSheetSource(source) {
   throw new AppError(
     "INVALID_SOURCE",
     "Provide either a Google Sheet URL or spreadsheet id."
+  );
+}
+
+export function resolveGoogleSlideSource(source) {
+  if (!source || typeof source !== "object") {
+    throw new AppError("INVALID_SOURCE", "A Google Slide source is required.");
+  }
+
+  if (source.url) {
+    const { presentationId, canonicalUrl } = parseGoogleSlideUrl(source.url);
+    if (source.id && source.id !== presentationId) {
+      throw new AppError(
+        "INVALID_SOURCE",
+        "Provided Google Slide URL and id do not match."
+      );
+    }
+
+    return {
+      presentationId,
+      sourceUrl: canonicalUrl
+    };
+  }
+
+  if (source.id) {
+    return {
+      presentationId: source.id,
+      sourceUrl: `https://docs.google.com/presentation/d/${source.id}/edit`
+    };
+  }
+
+  throw new AppError(
+    "INVALID_SOURCE",
+    "Provide either a Google Slide URL or presentation id."
   );
 }

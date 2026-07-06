@@ -38,8 +38,9 @@ function mergeConfig(rawConfig, configDir) {
         scopes:
           rawConfig?.google?.auth?.scopes ??
           [
-            "https://www.googleapis.com/auth/documents.readonly",
-            "https://www.googleapis.com/auth/spreadsheets.readonly"
+            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+            "https://www.googleapis.com/auth/presentations"
           ]
       }
     },

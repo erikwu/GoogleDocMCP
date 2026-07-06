@@ -4,6 +4,22 @@ import { getConfig } from "../config.js";
 import { AppError } from "../errors.js";
 import { extractGoogleDocUrls } from "../lib/googleLinks.js";
 
+const FRONTMATTER_PATTERN = /^---\n([\s\S]*?)\n---/;
+const SYNC_METADATA_COMMENT_PATTERN =
+  /^<!-- google-doc-(?:ssot|sync):[^\n]*-->\n?/gm;
+const GOOGLE_DOC_SYNC_DIRECTION_ALIASES = new Map([
+  ["google_doc_to_obsidian", "google_doc_to_obsidian"],
+  ["google_primary", "google_doc_to_obsidian"],
+  ["google", "google_doc_to_obsidian"],
+  ["obsidian_to_google_doc", "obsidian_to_google_doc"],
+  ["obsidian_primary", "obsidian_to_google_doc"],
+  ["obsidian", "obsidian_to_google_doc"],
+  ["compare_only", "compare_only"],
+  ["compare", "compare_only"],
+  ["diff_only", "compare_only"],
+  ["compare_google_doc_and_obsidian", "compare_only"]
+]);
+
 function resolveNotePath(notePath) {
   if (!notePath || typeof notePath !== "string") {
     throw new AppError("INVALID_PATH", "note_path must be a non-empty string.");
@@ -47,6 +63,101 @@ function ensureParentDirectory(filePath) {
 
 function normalizeBlockContent(blockContent) {
   return blockContent.replace(/\r\n/g, "\n").trimEnd();
+}
+
+function normalizeFrontmatterScalar(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "");
+}
+
+export function parseFrontmatterFields(noteText) {
+  const match = noteText.match(FRONTMATTER_PATTERN);
+  if (!match) {
+    return {};
+  }
+
+  const fields = {};
+  for (const rawLine of match[1].split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = normalizeFrontmatterScalar(line.slice(separatorIndex + 1));
+    if (!key || !value) {
+      continue;
+    }
+
+    fields[key] = value;
+  }
+
+  return fields;
+}
+
+function normalizeGoogleDocSyncDirection(value) {
+  if (!value) {
+    return "google_doc_to_obsidian";
+  }
+
+  const normalizedKey = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+  const direction = GOOGLE_DOC_SYNC_DIRECTION_ALIASES.get(normalizedKey);
+
+  if (!direction) {
+    throw new AppError(
+      "INVALID_SOURCE",
+      "Unsupported google_doc_sync_direction value.",
+      {
+        details: { value }
+      }
+    );
+  }
+
+  return direction;
+}
+
+export function extractGoogleDocSyncTemplate(noteText, overrides = {}) {
+  const config = getConfig();
+  const frontmatter = parseFrontmatterFields(noteText);
+  const sourceUrl =
+    overrides.sourceUrl ??
+    frontmatter.google_doc_sync_url ??
+    frontmatter.google_doc_ssot_url ??
+    frontmatter.ssot_url ??
+    frontmatter.source_url ??
+    extractGoogleDocUrls(noteText)[0] ??
+    null;
+
+  return {
+    sourceUrl,
+    direction: normalizeGoogleDocSyncDirection(
+      overrides.direction ??
+        frontmatter.google_doc_sync_direction ??
+        frontmatter.google_doc_sync_mode
+    ),
+    startMarker:
+      overrides.startMarker ??
+      frontmatter.google_doc_sync_start_marker ??
+      config.sync.startMarker,
+    endMarker:
+      overrides.endMarker ??
+      frontmatter.google_doc_sync_end_marker ??
+      config.sync.endMarker,
+    heading:
+      overrides.heading ??
+      frontmatter.google_doc_sync_heading ??
+      config.sync.blockHeading
+  };
 }
 
 export function upsertBlockBetweenMarkers(
@@ -142,27 +253,7 @@ export function writeNote(options) {
 }
 
 export function extractSsotUrl(noteText) {
-  const frontmatterMatch = noteText.match(/^---\n([\s\S]*?)\n---/);
-  if (frontmatterMatch) {
-    const urlLine = frontmatterMatch[1]
-      .split("\n")
-      .map((line) => line.trim())
-      .find(
-        (line) =>
-          line.startsWith("google_doc_ssot_url:") ||
-          line.startsWith("ssot_url:") ||
-          line.startsWith("source_url:")
-      );
-
-    if (urlLine) {
-      const [, rawValue] = urlLine.split(/:\s+/, 2);
-      if (rawValue) {
-        return rawValue.trim().replace(/^['"]|['"]$/g, "");
-      }
-    }
-  }
-
-  return extractGoogleDocUrls(noteText)[0] ?? null;
+  return extractGoogleDocSyncTemplate(noteText).sourceUrl;
 }
 
 export function extractManagedBlock(noteText, startMarker, endMarker) {
@@ -175,6 +266,6 @@ export function extractManagedBlock(noteText, startMarker, endMarker) {
   return noteText
     .slice(startIndex + startMarker.length, endIndex)
     .trim()
-    .replace(/^<!-- google-doc-ssot:[^\n]*-->\n?/gm, "")
+    .replace(SYNC_METADATA_COMMENT_PATTERN, "")
     .trim();
 }

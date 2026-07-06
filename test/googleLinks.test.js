@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  parseGoogleSlideUrl,
   parseGoogleSheetUrl,
+  resolveGoogleSlideSource,
   resolveGoogleSheetSource
 } from "../src/lib/googleLinks.js";
 
@@ -44,4 +46,25 @@ test("resolveGoogleSheetSource rejects mismatched spreadsheet id", () => {
       }),
     /do not match/
   );
+});
+
+test("parseGoogleSlideUrl extracts presentation id and canonical url", () => {
+  const parsed = parseGoogleSlideUrl(
+    "https://docs.google.com/presentation/d/test-slide-id/edit#slide=id.p1"
+  );
+
+  assert.equal(parsed.presentationId, "test-slide-id");
+  assert.equal(
+    parsed.canonicalUrl,
+    "https://docs.google.com/presentation/d/test-slide-id/edit"
+  );
+});
+
+test("resolveGoogleSlideSource supports source id only", () => {
+  const resolved = resolveGoogleSlideSource({ id: "deck-123" });
+
+  assert.deepEqual(resolved, {
+    presentationId: "deck-123",
+    sourceUrl: "https://docs.google.com/presentation/d/deck-123/edit"
+  });
 });
