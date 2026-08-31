@@ -1,5 +1,11 @@
 import { toErrorResult } from "./errors.js";
+import {
+  authorizeGoogleDriveRoot,
+  listGoogleDriveFolder,
+  readGoogleDriveGrantedItem
+} from "./google/drive.js";
 import { readGoogleDoc, writeGoogleDoc } from "./google/docs.js";
+import { readGoogleGmail, sendGoogleGmail } from "./google/gmail.js";
 import { readGoogleSheet } from "./google/sheets.js";
 import {
   applyGoogleSheetMappingsToSlide,
@@ -41,12 +47,117 @@ export async function runGoogleDocWrite(args) {
   }
 }
 
+export async function runGoogleDriveAuthorizeRoot(args, context = {}) {
+  try {
+    const grant = await authorizeGoogleDriveRoot(
+      {
+        source: args.source,
+        ttlHours: args.ttl_hours
+      },
+      context
+    );
+
+    return {
+      ok: true,
+      data: grant
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+}
+
+export async function runGoogleDriveListFolder(args) {
+  try {
+    const folder = await listGoogleDriveFolder({
+      grantId: args.grant_id,
+      folderId: args.folder_id,
+      recursive: args.recursive,
+      maxDepth: args.max_depth,
+      pageSize: args.page_size,
+      pageToken: args.page_token
+    });
+
+    return {
+      ok: true,
+      data: folder
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+}
+
+export async function runGoogleDriveReadItem(args) {
+  try {
+    const item = await readGoogleDriveGrantedItem({
+      grantId: args.grant_id,
+      itemId: args.item_id,
+      sheet: args.sheet,
+      gid: args.gid,
+      range: args.range
+    });
+
+    return {
+      ok: true,
+      data: item
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+}
+
 export async function runGoogleSheetRead(args) {
   try {
     const sheet = await readGoogleSheet(args.source);
     return {
       ok: true,
       data: sheet
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+}
+
+export async function runGoogleGmailRead(args) {
+  try {
+    const mailbox = await readGoogleGmail({
+      query: args.query,
+      maxResults: args.max_results,
+      labelIds: args.label_ids,
+      pageToken: args.page_token,
+      includeBody: args.include_body,
+      messageId: args.message_id
+    });
+    return {
+      ok: true,
+      data: mailbox
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+}
+
+export async function runGoogleGmailSend(args, context = {}) {
+  try {
+    const result = await sendGoogleGmail(
+      {
+        to: args.to,
+        cc: args.cc,
+        bcc: args.bcc,
+        subject: args.subject,
+        textBody: args.text_body,
+        htmlBody: args.html_body,
+        threadId: args.thread_id,
+        replyTo: args.reply_to,
+        inReplyTo: args.in_reply_to,
+        references: args.references,
+        dryRun: args.dry_run
+      },
+      context
+    );
+
+    return {
+      ok: true,
+      data: result
     };
   } catch (error) {
     return toErrorResult(error);

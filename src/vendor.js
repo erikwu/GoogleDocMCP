@@ -17,11 +17,13 @@ function loadVendor(name, specifiers) {
 }
 
 export const { McpServer } = loadVendor("MCP SDK", [
+  "@modelcontextprotocol/sdk/server/mcp.js",
   "@modelcontextprotocol/sdk/server/mcp",
   "/opt/homebrew/lib/node_modules/openclaw/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/mcp.js"
 ]);
 
 export const { StdioServerTransport } = loadVendor("MCP stdio transport", [
+  "@modelcontextprotocol/sdk/server/stdio.js",
   "@modelcontextprotocol/sdk/server/stdio",
   "/opt/homebrew/lib/node_modules/openclaw/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/stdio.js"
 ]);

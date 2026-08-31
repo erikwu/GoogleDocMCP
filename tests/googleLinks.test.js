@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   extractGoogleDocUrls,
   parseGoogleDocUrl,
+  parseGoogleDriveFolderUrl,
   resolveGoogleDocSource
 } from "../src/lib/googleLinks.js";
 
@@ -35,5 +36,17 @@ test("resolveGoogleDocSource supports source id only", () => {
   assert.equal(
     resolved.sourceUrl,
     "https://docs.google.com/document/d/xyz/edit"
+  );
+});
+
+test("parseGoogleDriveFolderUrl extracts folder id and canonical url", () => {
+  const parsed = parseGoogleDriveFolderUrl(
+    "https://drive.google.com/drive/u/0/folders/1UWjRbSk0s1ZmzcUfN6zNvk1Fnb9PNbC9"
+  );
+
+  assert.equal(parsed.folderId, "1UWjRbSk0s1ZmzcUfN6zNvk1Fnb9PNbC9");
+  assert.equal(
+    parsed.canonicalUrl,
+    "https://drive.google.com/drive/folders/1UWjRbSk0s1ZmzcUfN6zNvk1Fnb9PNbC9"
   );
 });

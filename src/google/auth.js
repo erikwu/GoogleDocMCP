@@ -45,15 +45,20 @@ function signJwt(header, payload, privateKey) {
 
 class GoogleAuthProvider {
   constructor() {
-    this.cachedToken = null;
+    this.cachedTokens = new Map();
   }
 
-  async getAccessToken() {
+  async getAccessToken(scopes, options = {}) {
     const config = getConfig();
     const authConfig = config.google.auth;
+    const requestedScopes = this.normalizeScopes(scopes ?? authConfig.scopes);
 
     if (authConfig.mode === "service_account") {
-      return this.getServiceAccountAccessToken(authConfig);
+      return this.getServiceAccountAccessToken(
+        authConfig,
+        requestedScopes,
+        options
+      );
     }
 
     if (authConfig.mode === "access_token") {
@@ -63,6 +68,22 @@ class GoogleAuthProvider {
     throw new AppError("AUTH_REQUIRED", "Unsupported Google auth mode.", {
       details: { mode: authConfig.mode }
     });
+  }
+
+  normalizeScopes(scopes) {
+    const values = Array.isArray(scopes) ? scopes : [];
+    const normalized = [...new Set(values.map((scope) => String(scope).trim()))]
+      .filter(Boolean)
+      .sort();
+
+    if (normalized.length === 0) {
+      throw new AppError(
+        "AUTH_REQUIRED",
+        "At least one Google OAuth scope must be configured."
+      );
+    }
+
+    return normalized;
   }
 
   getStaticAccessToken(authConfig) {
@@ -82,12 +103,41 @@ class GoogleAuthProvider {
     );
   }
 
-  async getServiceAccountAccessToken(authConfig) {
-    if (
-      this.cachedToken &&
-      this.cachedToken.expiresAt > Date.now() + 60 * 1000
-    ) {
-      return this.cachedToken.accessToken;
+  resolveDelegatedUser(authConfig, options) {
+    if (options.delegatedUser) {
+      return String(options.delegatedUser).trim();
+    }
+
+    if (options.requireDelegatedUser) {
+      const delegatedUser = String(authConfig.delegatedUser ?? "").trim();
+      if (!delegatedUser) {
+        throw new AppError(
+          "AUTH_REQUIRED",
+          "Gmail access with service_account mode requires google.auth.delegatedUser.",
+          {
+            details: {
+              authMode: authConfig.mode
+            }
+          }
+        );
+      }
+
+      return delegatedUser;
+    }
+
+    return null;
+  }
+
+  async getServiceAccountAccessToken(authConfig, scopes, options) {
+    const delegatedUser = this.resolveDelegatedUser(authConfig, options);
+    const cacheKey = JSON.stringify({
+      scopes,
+      delegatedUser
+    });
+    const cachedToken = this.cachedTokens.get(cacheKey);
+
+    if (cachedToken && cachedToken.expiresAt > Date.now() + 60 * 1000) {
+      return cachedToken.accessToken;
     }
 
     const credential = readCredentialFile(authConfig.credentialPath);
@@ -106,11 +156,14 @@ class GoogleAuthProvider {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
       iss: credential.client_email,
-      scope: authConfig.scopes.join(" "),
+      scope: scopes.join(" "),
       aud: credential.token_uri,
       iat: now,
       exp: now + 3600
     };
+    if (delegatedUser) {
+      payload.sub = delegatedUser;
+    }
 
     const assertion = signJwt(
       { alg: "RS256", typ: "JWT" },
@@ -145,12 +198,12 @@ class GoogleAuthProvider {
     }
 
     const payloadJson = await response.json();
-    this.cachedToken = {
+    this.cachedTokens.set(cacheKey, {
       accessToken: payloadJson.access_token,
       expiresAt: Date.now() + payloadJson.expires_in * 1000
-    };
+    });
 
-    return this.cachedToken.accessToken;
+    return this.cachedTokens.get(cacheKey).accessToken;
   }
 }
 

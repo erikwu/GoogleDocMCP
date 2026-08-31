@@ -4,6 +4,11 @@ import { resolveGoogleSlideSource } from "../lib/googleLinks.js";
 import { readGoogleSheet } from "./sheets.js";
 import { googleAuthProvider } from "./auth.js";
 
+const GOOGLE_SLIDES_READ_SCOPE =
+  "https://www.googleapis.com/auth/presentations.readonly";
+const GOOGLE_SLIDES_WRITE_SCOPE =
+  "https://www.googleapis.com/auth/presentations";
+
 const TITLE_PLACEHOLDER_TYPES = new Set([
   "TITLE",
   "CENTERED_TITLE",
@@ -1314,7 +1319,9 @@ export function planGoogleSlideSheetMappings({
 
 export async function readGoogleSlide(source) {
   const resolvedSource = resolveGoogleSlideSource(source);
-  const accessToken = await googleAuthProvider.getAccessToken();
+  const accessToken = await googleAuthProvider.getAccessToken([
+    GOOGLE_SLIDES_READ_SCOPE
+  ]);
   const payload = await fetchGoogleSlidePresentation(
     resolvedSource.presentationId,
     accessToken
@@ -1336,7 +1343,9 @@ export async function writeGoogleSlide({
   dryRun = false
 }) {
   const resolvedSource = resolveGoogleSlideSource(source);
-  const accessToken = await googleAuthProvider.getAccessToken();
+  const accessToken = await googleAuthProvider.getAccessToken([
+    GOOGLE_SLIDES_WRITE_SCOPE
+  ]);
   const presentationPayload = await fetchGoogleSlidePresentation(
     resolvedSource.presentationId,
     accessToken
@@ -1361,7 +1370,7 @@ export async function applyGoogleSheetMappingsToSlide({
   const [sheetPayload, resolvedSource, accessToken] = await Promise.all([
     readGoogleSheet(sheet),
     Promise.resolve(resolveGoogleSlideSource(presentation)),
-    googleAuthProvider.getAccessToken()
+    googleAuthProvider.getAccessToken([GOOGLE_SLIDES_WRITE_SCOPE])
   ]);
   const presentationPayload = await fetchGoogleSlidePresentation(
     resolvedSource.presentationId,

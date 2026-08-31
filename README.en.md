@@ -16,6 +16,11 @@ This repository is a minimal MCP project scaffold focused on establishing the fo
 
 - `google_doc_read`
 - `google_doc_write`
+- `google_drive_authorize_root`
+- `google_drive_list_folder`
+- `google_drive_read_item`
+- `google_gmail_read`
+- `google_gmail_send`
 - `google_sheet_read`
 - `google_slide_read`
 - `google_slide_write`
@@ -37,6 +42,11 @@ By default, this project supports local credential files for:
 
 If you use `service_account`, you must share the target Google Doc / Google Sheet / Google Slide with the service account email.
 
+If you want to access Gmail:
+
+- in `access_token` mode, the token itself must include Gmail scopes
+- in `service_account` mode, you will typically need Google Workspace domain-wide delegation and a configured `google.auth.delegatedUser`
+
 ## How To Get `google-service-account.json`
 
 This project currently recommends `service_account` as the default authentication approach for the minimum viable loop, because it is the best fit for the workflow of "store a local credential file and let the MCP call the Google Docs API directly."
@@ -47,12 +57,14 @@ This project currently recommends `service_account` as the default authenticatio
 2. Create a new project, or select an existing one.
 3. All APIs, service accounts, and keys used below will belong to that project.
 
-### 2. Enable Google Docs API / Google Sheets API / Google Slides API
+### 2. Enable Google Docs API / Google Sheets API / Google Slides API / Gmail API / Google Drive API
 
 1. Enable Google Docs API in the selected project.
 2. If you want to use the already-supported Google Sheet reading capability, enable Google Sheets API as well.
 3. If you want to use the already-supported Google Slide reading and writing capability, enable Google Slides API as well.
-4. If IAM-related pages are unavailable while creating keys, also verify that the IAM API is enabled.
+4. If you want to use Gmail reading or sending, enable Gmail API as well.
+5. If you want to traverse Google Drive folders, enable Google Drive API as well.
+6. If IAM-related pages are unavailable while creating keys, also verify that the IAM API is enabled.
 
 ### 3. Create a Service Account
 
@@ -320,6 +332,8 @@ After restart, try calling the tools exposed by this MCP from Codex, for example
 
 - `google_doc_read`
 - `google_doc_write`
+- `google_gmail_read`
+- `google_gmail_send`
 - `google_sheet_read`
 - `google_slide_read`
 - `google_slide_write`
@@ -542,6 +556,118 @@ This tool is useful for two common patterns:
 
 - manage placeholder replacement for Slides from a Sheet
 - use a Sheet to define the final content for specific text shapes by `object_id`
+
+## Google Drive Folder Listing
+
+`google_drive_authorize_root` is the explicit step for authorizing a Drive root folder for the current working session.
+
+It will:
+
+- verify that the current Google account can actually access the folder
+- require an explicit confirmation
+- return a `grant_id`
+
+All subsequent Drive traversal must include that `grant_id`, so the MCP is restricted to that authorized subtree.
+
+`google_drive_list_folder` supports:
+
+- listing folder contents inside an already authorized subtree by `grant_id`
+- optionally passing a `folder_id`, as long as that folder already belongs to the authorized subtree
+- optional recursive traversal
+
+`google_drive_read_item` supports:
+
+- reading a previously discovered Google file by `grant_id + item_id`
+- Google Doc / Google Sheet / Google Slide items are currently supported
+- for Sheets, you can still pass `sheet` / `gid` / `range`
+
+This means that in Drive-scoped mode, the agent does not need arbitrary raw Doc / Sheet / Slide ids up front.
+It can authorize a root, discover items beneath it, then read only those discovered items.
+
+The response includes:
+
+- root folder metadata
+- child item `id`
+- `name`
+- `mimeType`
+- whether the item is a folder
+- a directly openable `webViewLink`
+- hierarchy `depth`
+- logical `path`
+
+Example:
+
+```json
+{
+  "source": {
+    "url": "https://drive.google.com/drive/folders/1UWjRbSk0s1ZmzcUfN6zNvk1Fnb9PNbC9"
+  },
+  "ttl_hours": 8
+}
+```
+
+```json
+{
+  "grant_id": "gdrv_xxxxxxxx",
+  "recursive": true,
+  "max_depth": 3
+}
+```
+
+```json
+{
+  "grant_id": "gdrv_xxxxxxxx",
+  "item_id": "1AbCdEfGhIjKlMnOp"
+}
+```
+
+## Gmail Reading And Sending
+
+`google_gmail_read` supports two common patterns:
+
+- read a message list by Gmail search syntax such as `from:foo@example.com newer_than:7d`
+- read a single message directly by `message_id`
+
+The response includes:
+
+- sender, recipients, cc, subject, and date
+- Gmail `labelIds`
+- `snippet`
+- normalized `bodyText`
+- `bodyHtml` when an HTML body is available
+
+`google_gmail_send` supports plain text or HTML email, plus:
+
+- `cc`
+- `bcc`
+- `reply_to`
+- `thread_id`
+- `in_reply_to`
+- `references`
+
+Send safety rule:
+
+- every non-`dry_run` call to `google_gmail_send` requires a second confirmation
+- the Gmail API send only happens after that confirmation is accepted
+
+Example:
+
+```json
+{
+  "query": "from:alice@example.com newer_than:3d",
+  "max_results": 5,
+  "include_body": true
+}
+```
+
+```json
+{
+  "to": ["bob@example.com"],
+  "subject": "Weekly update",
+  "text_body": "Hi Bob,\n\nThis is a test email from Google Workspace MCP.",
+  "dry_run": true
+}
+```
 
 ## Start
 

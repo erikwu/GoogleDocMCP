@@ -6,6 +6,10 @@ const GOOGLE_SHEET_URL_PATTERN =
   /https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
 const GOOGLE_SLIDE_URL_PATTERN =
   /https:\/\/docs\.google\.com\/presentation\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i;
+const GOOGLE_DRIVE_FOLDER_URL_PATTERN =
+  /https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([a-zA-Z0-9_-]+)/i;
+const GOOGLE_DRIVE_OPEN_URL_PATTERN =
+  /https:\/\/drive\.google\.com\/open\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i;
 
 function normalizeSheetGid(gid) {
   if (gid === undefined || gid === null || gid === "") {
@@ -95,6 +99,31 @@ export function parseGoogleSlideUrl(url) {
   return {
     presentationId,
     canonicalUrl: `https://docs.google.com/presentation/d/${presentationId}/edit`
+  };
+}
+
+export function parseGoogleDriveFolderUrl(url) {
+  if (typeof url !== "string") {
+    throw new AppError(
+      "INVALID_LINK",
+      "Google Drive folder URL must be a string."
+    );
+  }
+
+  const directMatch = url.match(GOOGLE_DRIVE_FOLDER_URL_PATTERN);
+  const openMatch = url.match(GOOGLE_DRIVE_OPEN_URL_PATTERN);
+  const match = directMatch ?? openMatch;
+
+  if (!match) {
+    throw new AppError("INVALID_LINK", "Unsupported Google Drive folder URL.", {
+      details: { url }
+    });
+  }
+
+  const folderId = match[1];
+  return {
+    folderId,
+    canonicalUrl: `https://drive.google.com/drive/folders/${folderId}`
   };
 }
 
@@ -233,5 +262,41 @@ export function resolveGoogleSlideSource(source) {
   throw new AppError(
     "INVALID_SOURCE",
     "Provide either a Google Slide URL or presentation id."
+  );
+}
+
+export function resolveGoogleDriveFolderSource(source) {
+  if (!source || typeof source !== "object") {
+    throw new AppError(
+      "INVALID_SOURCE",
+      "A Google Drive folder source is required."
+    );
+  }
+
+  if (source.url) {
+    const { folderId, canonicalUrl } = parseGoogleDriveFolderUrl(source.url);
+    if (source.id && source.id !== folderId) {
+      throw new AppError(
+        "INVALID_SOURCE",
+        "Provided Google Drive folder URL and id do not match."
+      );
+    }
+
+    return {
+      folderId,
+      sourceUrl: canonicalUrl
+    };
+  }
+
+  if (source.id) {
+    return {
+      folderId: source.id,
+      sourceUrl: `https://drive.google.com/drive/folders/${source.id}`
+    };
+  }
+
+  throw new AppError(
+    "INVALID_SOURCE",
+    "Provide either a Google Drive folder URL or folder id."
   );
 }

@@ -3,6 +3,9 @@ import { AppError } from "../errors.js";
 import { resolveGoogleSheetSource } from "../lib/googleLinks.js";
 import { googleAuthProvider } from "./auth.js";
 
+const GOOGLE_SHEETS_READ_SCOPE =
+  "https://www.googleapis.com/auth/spreadsheets.readonly";
+
 function truncateText(text, maxChars) {
   if (text.length <= maxChars) {
     return { text, truncated: false };
@@ -297,7 +300,9 @@ async function fetchSheetValues(spreadsheetId, requestedRange, accessToken) {
 
 export async function readGoogleSheet(source) {
   const resolvedSource = resolveGoogleSheetSource(source);
-  const accessToken = await googleAuthProvider.getAccessToken();
+  const accessToken = await googleAuthProvider.getAccessToken([
+    GOOGLE_SHEETS_READ_SCOPE
+  ]);
   const metadataPayload = await fetchSheetMetadata(
     resolvedSource.spreadsheetId,
     accessToken

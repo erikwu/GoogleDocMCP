@@ -3,6 +3,10 @@ import { AppError } from "../errors.js";
 import { resolveGoogleDocSource } from "../lib/googleLinks.js";
 import { googleAuthProvider } from "./auth.js";
 
+const GOOGLE_DOCS_READ_SCOPE =
+  "https://www.googleapis.com/auth/documents.readonly";
+const GOOGLE_DOCS_WRITE_SCOPE = "https://www.googleapis.com/auth/documents";
+
 function normalizeText(text) {
   return text
     .replace(/\r\n/g, "\n")
@@ -923,7 +927,9 @@ async function batchUpdateGoogleDoc({ documentId, requests, accessToken }) {
 
 export async function readGoogleDoc(source) {
   const { documentId, sourceUrl } = resolveGoogleDocSource(source);
-  const accessToken = await googleAuthProvider.getAccessToken();
+  const accessToken = await googleAuthProvider.getAccessToken([
+    GOOGLE_DOCS_READ_SCOPE
+  ]);
   const payload = await fetchGoogleDocDocument(documentId, accessToken);
   const normalized = normalizeGoogleDocPayload(payload);
 
@@ -937,7 +943,9 @@ export async function readGoogleDoc(source) {
 
 export async function writeGoogleDoc({ source, markdown, dryRun = false }) {
   const { documentId, sourceUrl } = resolveGoogleDocSource(source);
-  const accessToken = await googleAuthProvider.getAccessToken();
+  const accessToken = await googleAuthProvider.getAccessToken([
+    GOOGLE_DOCS_WRITE_SCOPE
+  ]);
   const documentPayload = await fetchGoogleDocDocument(documentId, accessToken);
 
   if (Array.isArray(documentPayload?.tabs) && documentPayload.tabs.length > 1) {

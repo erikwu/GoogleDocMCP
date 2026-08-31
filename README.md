@@ -16,6 +16,11 @@ English version: [README.en.md](README.en.md)
 
 - `google_doc_read`
 - `google_doc_write`
+- `google_drive_authorize_root`
+- `google_drive_list_folder`
+- `google_drive_read_item`
+- `google_gmail_read`
+- `google_gmail_send`
 - `google_sheet_read`
 - `google_slide_read`
 - `google_slide_write`
@@ -37,6 +42,11 @@ Apache License 2.0. See [LICENSE](LICENSE).
 
 如果使用 `service_account`，需要把目标 Google Doc / Google Sheet / Google Slide 分享给该服务账号邮箱。
 
+如果你要访问 Gmail：
+
+- `access_token` 模式下，token 本身需要包含 Gmail 相关 scope
+- `service_account` 模式下，通常需要 Google Workspace 域级委托，并在配置里提供 `google.auth.delegatedUser`
+
 ## 如何获得 `google-service-account.json`
 
 当前项目默认推荐用 `service_account` 做最小闭环，因为它最适合“本地放一个 credential 文件，然后 MCP 直接调用 Google Docs API”这种工作方式。
@@ -47,12 +57,14 @@ Apache License 2.0. See [LICENSE](LICENSE).
 2. 新建一个项目，或者选中你已有的项目。
 3. 后续所有 API、Service Account 和 key 都会绑定在这个项目下。
 
-### 2. 启用 Google Docs API / Google Sheets API / Google Slides API
+### 2. 启用 Google Docs API / Google Sheets API / Google Slides API / Gmail API / Google Drive API
 
 1. 在当前项目里启用 Google Docs API。
 2. 如果你要使用当前已经支持的 Google Sheet 读取，也要启用 Google Sheets API。
 3. 如果你要使用当前已经支持的 Google Slide 读取和写入，也要启用 Google Slides API。
-4. 如果你在创建 key 时遇到 IAM 相关页面不可用，也可以顺手确认 IAM API 是否已启用。
+4. 如果你要使用 Gmail 读取或发送，也要启用 Gmail API。
+5. 如果你要遍历 Google Drive 文件夹，也要启用 Google Drive API。
+6. 如果你在创建 key 时遇到 IAM 相关页面不可用，也可以顺手确认 IAM API 是否已启用。
 
 ### 3. 创建 Service Account
 
@@ -320,6 +332,8 @@ GOOGLE_WORKSPACE_MCP_CONFIG = "/absolute/path/to/GoogleDoc MCP/config/local.json
 
 - `google_doc_read`
 - `google_doc_write`
+- `google_gmail_read`
+- `google_gmail_send`
 - `google_sheet_read`
 - `google_slide_read`
 - `google_slide_write`
@@ -542,6 +556,118 @@ mode | placeholder | value | slide | object_id | text | enabled
 
 - 用 Sheet 统一管理 Slide 占位符替换
 - 用 Sheet 精准指定某个文本框 `object_id` 的最终内容
+
+## Google Drive 文件夹遍历
+
+`google_drive_authorize_root` 用来显式授权一个本次可访问的 Drive 根目录。
+
+它会：
+
+- 验证当前 Google 账号确实能访问这个文件夹
+- 触发一次明确确认
+- 返回一个 `grant_id`
+
+后续 Drive 遍历必须携带这个 `grant_id`，这样 MCP 只能在该根目录子树内继续访问。
+
+`google_drive_list_folder` 支持：
+
+- 基于 `grant_id` 列出已授权子树里的文件夹内容
+- 可选传 `folder_id`，但它必须已经属于该授权子树
+- 可选递归遍历子文件夹
+
+`google_drive_read_item` 支持：
+
+- 基于 `grant_id + item_id` 读取已经发现过的 Google 文件
+- 当前支持 Google Doc / Google Sheet / Google Slide
+- 如果是 Sheet，也可以继续传 `sheet` / `gid` / `range`
+
+这意味着在 Drive 受限模式下，你不需要直接把任意 Doc / Sheet / Slide id 暴露给 Agent；
+只要先授权根目录，再遍历，再读取已发现的 item 即可。
+
+返回结果会包含：
+
+- 根文件夹信息
+- 子项 `id`
+- `name`
+- `mimeType`
+- 是否是文件夹
+- 可直接打开的 `webViewLink`
+- 层级 `depth`
+- 逻辑路径 `path`
+
+示例：
+
+```json
+{
+  "source": {
+    "url": "https://drive.google.com/drive/folders/1UWjRbSk0s1ZmzcUfN6zNvk1Fnb9PNbC9"
+  },
+  "ttl_hours": 8
+}
+```
+
+```json
+{
+  "grant_id": "gdrv_xxxxxxxx",
+  "recursive": true,
+  "max_depth": 3
+}
+```
+
+```json
+{
+  "grant_id": "gdrv_xxxxxxxx",
+  "item_id": "1AbCdEfGhIjKlMnOp"
+}
+```
+
+## Gmail 读取与发送
+
+`google_gmail_read` 支持两种常见用法：
+
+- 按 Gmail 搜索语法读取邮件列表，例如 `from:foo@example.com newer_than:7d`
+- 直接按 `message_id` 读取单封邮件
+
+返回结果会包含：
+
+- 发件人、收件人、抄送、主题、日期
+- Gmail `labelIds`
+- `snippet`
+- 归一化后的 `bodyText`
+- 如果存在 HTML 正文，也会返回 `bodyHtml`
+
+`google_gmail_send` 支持发送纯文本或 HTML 邮件，也支持：
+
+- `cc`
+- `bcc`
+- `reply_to`
+- `thread_id`
+- `in_reply_to`
+- `references`
+
+发送保护规则：
+
+- 只要不是 `dry_run`，每次调用 `google_gmail_send` 都会触发一次二次确认
+- 只有你确认后，MCP 才会真正调用 Gmail API 发信
+
+示例：
+
+```json
+{
+  "query": "from:alice@example.com newer_than:3d",
+  "max_results": 5,
+  "include_body": true
+}
+```
+
+```json
+{
+  "to": ["bob@example.com"],
+  "subject": "Weekly update",
+  "text_body": "Hi Bob,\n\nThis is a test email from Google Workspace MCP.",
+  "dry_run": true
+}
+```
 
 ## 启动
 

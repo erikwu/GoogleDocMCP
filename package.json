@@ -8,5 +8,9 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   }
 }
